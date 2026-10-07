@@ -1,13 +1,18 @@
 {
   "name": "rlforge",
   "displayName": "RLForge — RL Developer Toolkit",
-  "description": "Watch, inspect and debug reinforcement-learning agents and Gymnasium environments directly inside VS Code.",
+  "description": "DevTools for RL: watch agents play, health-check and fuzz Gymnasium environments, and replay any failure step by step, inside your editor.",
   "version": "0.1.0",
   "publisher": "rlforge",
   "license": "MIT",
+  "pricing": "Free",
   "repository": {
     "type": "git",
     "url": "https://github.com/tanishbhandari11t/RLForge.git"
+  },
+  "homepage": "https://github.com/tanishbhandari11t/RLForge#readme",
+  "bugs": {
+    "url": "https://github.com/tanishbhandari11t/RLForge/issues"
   },
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -31,7 +36,12 @@
     "agent",
     "debugger",
     "ppo",
-    "dqn"
+    "dqn",
+    "sb3",
+    "gym",
+    "environment testing",
+    "fuzzing",
+    "replay"
   ],
   "main": "./out/extension.js",
   "activationEvents": [
@@ -243,7 +253,9 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "test:engine": "python engine/tests/smoke_test.py",
-    "package": "vsce package"
+    "package": "vsce package",
+    "publish:vscode": "vsce publish",
+    "publish:openvsx": "npx --yes ovsx publish"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
