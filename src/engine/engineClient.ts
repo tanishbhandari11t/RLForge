@@ -1,4 +1,5 @@
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import * as vscode from 'vscode';
@@ -40,6 +41,8 @@ export class EngineClient implements vscode.Disposable {
   private nextId = 1;
   private stderrTail: string[] = [];
   private _state: EngineState = { status: 'stopped' };
+  /** Fingerprint of the engine sources the running process was started from. */
+  private codeStamp = '';
 
   private readonly _onEvent = new vscode.EventEmitter<EngineEvent>();
   readonly onEvent = this._onEvent.event;
@@ -90,6 +93,7 @@ export class EngineClient implements vscode.Disposable {
     };
     this.output.appendLine(`[rlforge] starting engine: ${python.command} -m rlforge_engine (${python.source})`);
     this.stderrTail = [];
+    this.codeStamp = this.currentCodeStamp();
 
     const proc = spawn(python.command, [...python.args, '-u', '-m', 'rlforge_engine'], {
       cwd: folder?.uri.fsPath,
@@ -110,7 +114,7 @@ export class EngineClient implements vscode.Disposable {
     proc.on('exit', (code, signal) => this.onExit(proc, `Engine exited (code ${code ?? signal}).`));
 
     try {
-      const hello = await this.request<Record<string, unknown>>('hello', {}, 60000);
+      const hello = await this.send<Record<string, unknown>>('hello', {}, 60000);
       const state: EngineState = { status: 'ready', python: python.command, pythonSource: python.source, hello };
       this.setState(state);
       return state;
@@ -179,7 +183,53 @@ export class EngineClient implements vscode.Disposable {
     }
   }
 
-  request<T = unknown>(cmd: string, args: Record<string, unknown> = {}, timeoutMs = 120000): Promise<T> {
+  private currentCodeStamp(): string {
+    const dir = path.join(this.enginePath, 'rlforge_engine');
+    try {
+      return fs
+        .readdirSync(dir)
+        .filter((f) => f.endsWith('.py'))
+        .sort()
+        .map((f) => {
+          const st = fs.statSync(path.join(dir, f));
+          return `${f}:${st.size}:${st.mtimeMs}`;
+        })
+        .join('|');
+    } catch {
+      return '';
+    }
+  }
+
+  /** True when the extension was updated on disk after this engine process started. */
+  isStale(): boolean {
+    return !!this.proc && this.codeStamp !== this.currentCodeStamp();
+  }
+
+  async restartIfStale(): Promise<boolean> {
+    if (!this.isStale()) {
+      return false;
+    }
+    this.output.appendLine('[rlforge] engine code changed on disk (extension updated) — restarting engine');
+    await this.restart();
+    return true;
+  }
+
+  /** Send a request; if the running engine predates an extension update, restart it and retry once. */
+  async request<T = unknown>(cmd: string, args: Record<string, unknown> = {}, timeoutMs = 120000): Promise<T> {
+    await this.restartIfStale();
+    try {
+      return await this.send<T>(cmd, args, timeoutMs);
+    } catch (err) {
+      if (err instanceof EngineRequestError && err.message.startsWith('Unknown command') && cmd !== 'hello') {
+        this.output.appendLine(`[rlforge] engine does not know "${cmd}" — restarting it with the current engine code`);
+        await this.restart();
+        return this.send<T>(cmd, args, timeoutMs);
+      }
+      throw err;
+    }
+  }
+
+  private send<T = unknown>(cmd: string, args: Record<string, unknown> = {}, timeoutMs = 120000): Promise<T> {
     const proc = this.proc;
     if (!proc) {
       return Promise.reject(new Error('RLForge engine is not running.'));
