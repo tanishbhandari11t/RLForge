@@ -3,7 +3,7 @@
   "displayName": "RLForge — RL Developer Toolkit",
   "description": "DevTools for RL: watch agents play, health-check and fuzz Gymnasium environments, and replay any failure step by step, inside your editor.",
   "version": "0.1.0",
-  "publisher": "rlforge",
+  "publisher": "tanishbhandari24",
   "license": "MIT",
   "pricing": "Free",
   "repository": {
