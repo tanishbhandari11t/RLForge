@@ -52,13 +52,13 @@ def _pick_render_mode(modes: list[str]) -> str | None:
     return None
 
 
-def make_env(spec: str, kwargs: dict | None = None):
-    """Create an environment that renders off-screen. Returns ``(env, render_mode)``."""
+def make_env(spec: str, kwargs: dict | None = None, render: bool = True):
+    """Create an environment that renders off-screen (or not at all). Returns ``(env, render_mode)``."""
     kwargs = dict(kwargs or {})
     if is_file_spec(spec):
         cls = _load_class_from_file(spec)
         modes = list(getattr(cls, "metadata", {}).get("render_modes", []) or [])
-        mode = _pick_render_mode(modes) or "rgb_array"
+        mode = (_pick_render_mode(modes) or "rgb_array") if render else None
         try:
             return cls(render_mode=mode, **kwargs), mode
         except TypeError:
@@ -69,6 +69,9 @@ def make_env(spec: str, kwargs: dict | None = None):
         import gymnasium as gym
     except ImportError as exc:
         raise EnvLoadError("gymnasium is not installed in the selected Python interpreter.") from exc
+
+    if not render:
+        return gym.make(spec, **kwargs), None
 
     mode: str | None = "rgb_array"
     try:

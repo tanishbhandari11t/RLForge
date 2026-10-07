@@ -7,12 +7,14 @@ interface Props {
   length: number;
   cursor: number | null;
   onSeek: (index: number | null) => void;
+  /** Step to highlight (e.g. where a replayed failure happens). */
+  marker?: number | null;
 }
 
 const MAX_BARS = 400;
 
 /** Reward-per-step strip with anomaly markers and a scrubber over the current episode. */
-export function Timeline({ timeline, length, cursor, onSeek }: Props) {
+export function Timeline({ timeline, length, cursor, onSeek, marker }: Props) {
   const last = Math.max(0, length - 1);
   const index = cursor ?? last;
 
@@ -66,6 +68,9 @@ export function Timeline({ timeline, length, cursor, onSeek }: Props) {
           .map((b) => (
             <rect key={`c${b.x}`} x={b.x - 1} width={Math.max(barW, width / 200)} y={0} height={3} className="bar-critical" />
           ))}
+        {marker != null && marker <= last && (
+          <line x1={marker} x2={marker} y1={0} y2={40} className="marker" />
+        )}
         <line x1={index} x2={index} y1={0} y2={40} className="cursor" />
       </svg>
       <input
@@ -80,7 +85,10 @@ export function Timeline({ timeline, length, cursor, onSeek }: Props) {
       />
       <div className="timeline-labels">
         <span>step 0</span>
-        <span>reward per step · drag to review any decision</span>
+        <span>
+          reward per step · drag to review any decision
+          {marker != null && <> · <span className="marker-label">▼ failure at step {marker}</span></>}
+        </span>
         <span>step {timeline[last]?.step ?? 0}</span>
       </div>
     </div>

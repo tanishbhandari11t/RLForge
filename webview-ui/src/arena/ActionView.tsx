@@ -16,7 +16,13 @@ export function ActionView({ action, info, labels, space, agent }: Props) {
   if (info.type === 'discrete' && info.probs) {
     const max = Math.max(...info.probs);
     const heading =
-      info.mode === 'q' ? 'Q-values (softmax)' : info.mode === 'uniform' ? 'Uniform random policy' : 'Action probabilities π(a|s)';
+      info.mode === 'q'
+        ? 'Q-values (softmax)'
+        : info.mode === 'uniform'
+          ? 'Uniform random policy'
+          : info.mode === 'scripted'
+            ? 'Replayed action'
+            : 'Action probabilities π(a|s)';
     return (
       <div className="action-view">
         <div className="subhead">{heading}</div>

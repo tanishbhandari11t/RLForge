@@ -66,7 +66,16 @@ class Server:
             "set_auto_reset": lambda a: self._with_session(lambda s: s.set_auto_reset(bool(a["value"]))),
             "set_deterministic": lambda a: self._with_session(lambda s: s.set_deterministic(bool(a["value"]))),
             "status": lambda a: self._with_session(lambda s: s.status()),
+            "set_recording": lambda a: self._with_session(lambda s: s.set_recording(bool(a["value"]))),
+            "save_episode": lambda a: self._with_session(lambda s: s.save_episode(complete=bool(s.done))),
+            "list_recordings": self.list_recordings,
+            "delete_recording": self.delete_recording,
+            "start_health": self.start_health,
+            "start_fuzz": self.start_fuzz,
+            "cancel_job": self.cancel_job,
         }
+        self.jobs: dict[int, threading.Event] = {}
+        self.next_job_id = 1
 
     def emit(self, event: str, data: dict) -> None:
         self.channel.send({"event": event, "data": data})
@@ -115,29 +124,143 @@ class Server:
         from .session import Session
 
         self.unload({})
+        env_id, kwargs, replay = args.get("env"), args.get("kwargs"), None
+        if args.get("replay"):
+            replay = self._replay_config(args["replay"])
+            env_id, kwargs = replay["env"], replay["kwargs"]
         session_id = self.next_session_id
         self.next_session_id += 1
         session = Session(
             session_id,
             self.emit,
-            args["env"],
+            env_id,
             args.get("seed"),
             args.get("agent"),
-            args.get("kwargs"),
+            kwargs,
             bool(args.get("autoReset", True)),
+            replay=replay,
         )
         self.session = session
         if "speed" in args:
             session.speed = float(args["speed"])
+        session.recording = bool(args.get("record")) and replay is None
         result = {
             "sessionId": session_id,
+            "envId": env_id,
             "inspection": session.inspection,
             "agent": session.agent.describe(),
             "status": session.status(),
+            "replay": None if replay is None else {
+                "label": replay["label"],
+                "seed": replay["seed"],
+                "steps": len(replay["actions"]),
+                "stopAt": replay.get("stopAt"),
+                "source": replay["source"],
+            },
         }
         # The first reset event must follow the response so the UI knows the session id.
         self._after_response = lambda: self._start_session(session)
         return result
+
+    def _replay_config(self, spec: dict) -> dict:
+        """Normalise a replay request: a saved recording ({path}) or a seed + action sequence."""
+        if spec.get("path"):
+            from . import recording
+
+            data = recording.load(spec["path"])
+            meta, steps = data["meta"], data["steps"]
+            actions = [s.get("action") for s in steps]
+            if any(a is None for a in actions):
+                raise ValueError("This recording uses an action space RLForge cannot replay (Dict/Tuple actions).")
+            name = os.path.basename(spec["path"])
+            return {
+                "env": meta["envId"],
+                "kwargs": meta.get("kwargs"),
+                "seed": meta.get("seed"),
+                "actions": actions,
+                "infos": [s.get("actionInfo") for s in steps],
+                "expected": steps,
+                "initial": data["initial"],
+                "stopAt": spec.get("stopAt"),
+                "label": f"Recording · {meta['envId']} episode {meta.get('episode')}",
+                "source": {"kind": "recording", "path": spec["path"], "name": name, "meta": meta},
+            }
+        actions = spec.get("actions") or []
+        return {
+            "env": spec["env"],
+            "kwargs": spec.get("kwargs"),
+            "seed": spec.get("seed"),
+            "actions": actions,
+            "infos": None,
+            "expected": None,
+            "initial": None,
+            "stopAt": spec.get("stopAt") or (len(actions) or None),
+            "label": spec.get("label") or "Replay",
+            "source": {"kind": spec.get("kind", "sequence"), "signature": spec.get("signature")},
+        }
+
+    # ----------------------------------------------------------------- recordings
+
+    def list_recordings(self, args: dict) -> dict:
+        from . import recording
+
+        return {"directory": recording.record_dir(), "recordings": recording.list_recordings()}
+
+    def delete_recording(self, args: dict) -> None:
+        from . import recording
+
+        recording.delete(args["path"])
+
+    # ----------------------------------------------------------------- background jobs
+
+    def _start_job(self, kind: str, work: Callable[[Callable[[dict], None], Callable[[], bool]], Any]) -> dict:
+        job_id = self.next_job_id
+        self.next_job_id += 1
+        cancel = threading.Event()
+        self.jobs[job_id] = cancel
+
+        def progress(data: dict) -> None:
+            self.emit("job_progress", {"jobId": job_id, "kind": kind, **data})
+
+        def run() -> None:
+            try:
+                result = work(progress, cancel.is_set)
+                self.emit("job_done", {"jobId": job_id, "kind": kind, "result": result})
+            except Exception as exc:
+                from .util import exception_info
+
+                self.emit("job_failed", {"jobId": job_id, "kind": kind, **exception_info(exc),
+                                         "error": f"{type(exc).__name__}: {exc}"})
+            finally:
+                self.jobs.pop(job_id, None)
+
+        threading.Thread(target=run, name=f"rlforge-{kind}-{job_id}", daemon=True).start()
+        return {"jobId": job_id, "kind": kind}
+
+    def start_health(self, args: dict) -> dict:
+        from .health import run_health
+
+        spec, kwargs = args["env"], args.get("kwargs")
+        seed = int(args.get("seed", 0))
+        steps = int(args.get("stepBudget", 5000))
+        seconds = float(args.get("timeBudget", 30))
+        return self._start_job("health", lambda p, c: run_health(spec, kwargs, seed, steps, seconds, p, c))
+
+    def start_fuzz(self, args: dict) -> dict:
+        from .fuzz import run_fuzz
+
+        spec, kwargs = args["env"], args.get("kwargs")
+        episodes = int(args.get("episodes", 1000))
+        max_steps = int(args.get("maxSteps", 1000))
+        seed = int(args.get("seed", 0))
+        strategy = str(args.get("strategy", "uniform"))
+        seconds = float(args.get("timeBudget", 300))
+        return self._start_job("fuzz", lambda p, c: run_fuzz(spec, kwargs, episodes, max_steps, seed, strategy, seconds, p, c))
+
+    def cancel_job(self, args: dict) -> None:
+        event = self.jobs.get(int(args["jobId"]))
+        if event is not None:
+            event.set()
 
     def _start_session(self, session: Any) -> None:
         if self.session is session:
@@ -202,6 +325,8 @@ class Server:
             if message.get("cmd") == "shutdown":
                 break
             self.handle(message)
+        for event in list(self.jobs.values()):
+            event.set()
         self.unload({})
 
 

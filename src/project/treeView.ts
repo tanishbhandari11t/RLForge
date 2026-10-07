@@ -54,7 +54,7 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<Node> {
         item.contextValue = 'rlforge.model';
         item.iconPath = new vscode.ThemeIcon('package');
         item.description = node.algorithm;
-        item.tooltip = `Stable-Baselines3 model\n${node.file}\n\nClick to load it as the agent in the Arena.`;
+        item.tooltip = `Stable-Baselines3 model\n${node.file}\n\nClick to watch this agent play in the Arena.`;
         item.command = { command: 'rlforge.watchItem', title: 'Watch in Arena', arguments: [node] };
         return item;
       }
@@ -90,6 +90,27 @@ export class ProjectTreeProvider implements vscode.TreeDataProvider<Node> {
         icon: 'play-circle',
         description: 'watch your agent play',
         command: { command: 'rlforge.openArena', title: 'Open Agent Arena' },
+      },
+      {
+        type: 'action',
+        label: 'Test Environment',
+        icon: 'pulse',
+        description: 'health check',
+        command: { command: 'rlforge.testEnvironment', title: 'Test Environment' },
+      },
+      {
+        type: 'action',
+        label: 'Fuzzer',
+        icon: 'bug',
+        description: 'find & replay failures',
+        command: { command: 'rlforge.fuzzEnvironment', title: 'Fuzz Environment' },
+      },
+      {
+        type: 'action',
+        label: 'Episode Replays',
+        icon: 'history',
+        description: 'recorded episodes',
+        command: { command: 'rlforge.openReplays', title: 'Episode Replays' },
       },
       {
         type: 'action',

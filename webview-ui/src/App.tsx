@@ -2,35 +2,41 @@ import { useEffect, useRef, useState } from 'react';
 import { ArenaView } from './arena/ArenaView';
 import { useArena } from './arena/useArena';
 import { EngineBanner } from './components/EngineBanner';
-import { Roadmap, RoadmapTab } from './components/Roadmap';
+import { Roadmap } from './components/Roadmap';
+import { FuzzerView } from './fuzzer/FuzzerView';
+import { HealthView } from './health/HealthView';
 import { InspectorView } from './inspector/InspectorView';
-import type { EngineState, PanelCommand, ProjectInfo, Settings } from './types';
+import { ReplayView } from './replay/ReplayView';
+import { ProfileEntry, RewardsView } from './rewards/RewardsView';
+import type { EngineState, PanelCommand, ProjectInfo, ReplayRequest, RewardProfile, Settings, TabId } from './types';
 import { assets, notifyReady, onHostMessage, request } from './vscode';
 
-type Tab = 'arena' | 'inspector' | RoadmapTab;
-
-const TABS: { id: Tab; label: string; soon?: boolean }[] = [
+const TABS: { id: TabId; label: string; soon?: boolean }[] = [
   { id: 'arena', label: '🎮 Arena' },
+  { id: 'health', label: '🩺 Health' },
+  { id: 'fuzzer', label: '🧨 Fuzzer' },
+  { id: 'replay', label: '🎥 Replay' },
+  { id: 'rewards', label: '🎯 Rewards' },
   { id: 'inspector', label: '🔍 Inspector' },
   { id: 'training', label: '📊 Training', soon: true },
-  { id: 'replay', label: '🎥 Replay', soon: true },
-  { id: 'fuzzer', label: '🧪 Fuzzer', soon: true },
-  { id: 'rewards', label: '🎯 Rewards', soon: true },
 ];
 
 export function App() {
   const [engine, setEngine] = useState<EngineState>({ status: 'starting' });
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [settings, setSettings] = useState<Settings>({ defaultSeed: 42, autoReset: true });
-  const [tab, setTab] = useState<Tab>('arena');
+  const [tab, setTab] = useState<TabId>('arena');
   const [command, setCommand] = useState<{ seq: number; command: PanelCommand } | null>(null);
   const [registeredEnvs, setRegisteredEnvs] = useState<string[]>([]);
+  const [profile, setProfile] = useState<ProfileEntry | null>(null);
   const arena = useArena();
   const seq = useRef(0);
   const dispatch = (c: PanelCommand) => {
     if (c.tab) setTab(c.tab);
     setCommand({ seq: ++seq.current, command: c });
   };
+  const replay = (r: ReplayRequest) => dispatch({ tab: 'arena', replay: r });
+  const onProfile = (envId: string, source: string, p: RewardProfile) => setProfile({ envId, source, profile: p });
 
   useEffect(() => {
     const off = onHostMessage((msg) => {
@@ -64,6 +70,9 @@ export function App() {
   }, [engine.status, engine.hello?.packages.gymnasium]);
 
   const hello = engine.hello;
+  const forTab = (id: TabId) => (command?.command.tab === id ? command : null);
+  const defaultEnv = arena.state.envId ?? project?.environments.find((e) => e.kind === 'custom')?.spec ?? null;
+  const shown = (id: TabId) => ({ display: tab === id ? 'contents' : 'none' });
 
   return (
     <div className="app">
@@ -104,14 +113,55 @@ export function App() {
       <EngineBanner engine={engine} />
 
       <main className="content">
-        <div style={{ display: tab === 'arena' ? 'contents' : 'none' }}>
+        <div style={shown('arena')}>
           <ArenaView
             arena={arena}
             project={project}
             settings={settings}
-            command={command?.command.tab !== 'inspector' ? command : null}
+            command={forTab('arena') ?? (command && !command.command.tab ? command : null)}
             registeredEnvs={registeredEnvs}
             active={tab === 'arena'}
+          />
+        </div>
+        <div style={shown('health')}>
+          <HealthView
+            project={project}
+            registeredEnvs={registeredEnvs}
+            settings={settings}
+            command={forTab('health')}
+            defaultEnv={defaultEnv}
+            onReplay={replay}
+            onNavigate={dispatch}
+            onProfile={onProfile}
+          />
+        </div>
+        <div style={shown('fuzzer')}>
+          <FuzzerView
+            project={project}
+            registeredEnvs={registeredEnvs}
+            settings={settings}
+            command={forTab('fuzzer')}
+            defaultEnv={defaultEnv}
+            onReplay={replay}
+            onProfile={onProfile}
+          />
+        </div>
+        <div style={shown('replay')}>
+          <ReplayView
+            active={tab === 'replay'}
+            refreshKey={arena.state.lastSaved?.at ?? 0}
+            onReplay={replay}
+            onOpenArena={() => setTab('arena')}
+          />
+        </div>
+        <div style={shown('rewards')}>
+          <RewardsView
+            project={project}
+            registeredEnvs={registeredEnvs}
+            command={forTab('rewards')}
+            defaultEnv={defaultEnv}
+            latest={profile}
+            onProfile={onProfile}
           />
         </div>
         {tab === 'inspector' && (
@@ -123,7 +173,7 @@ export function App() {
             onWatch={(env) => dispatch({ tab: 'arena', env, autoLaunch: true })}
           />
         )}
-        {tab !== 'arena' && tab !== 'inspector' && <Roadmap tab={tab} />}
+        {tab === 'training' && <Roadmap tab="training" />}
       </main>
     </div>
   );

@@ -30,6 +30,18 @@ export class RlCodeLensProvider implements vscode.CodeLensProvider {
           arguments: [{ env: spec, autoLaunch: true }],
         }),
         new vscode.CodeLens(range, {
+          title: '$(pulse) Test',
+          tooltip: 'Run an RLForge health check: check_env, determinism, crashes, NaN/space violations, reward signal',
+          command: 'rlforge.testEnvironment',
+          arguments: [{ env: spec }],
+        }),
+        new vscode.CodeLens(range, {
+          title: '$(bug) Fuzz',
+          tooltip: 'Fuzz 1,000 seeded episodes and minimise any failure',
+          command: 'rlforge.fuzzEnvironment',
+          arguments: [{ env: spec }],
+        }),
+        new vscode.CodeLens(range, {
           title: '$(search) Inspect',
           command: 'rlforge.inspectEnvironment',
           arguments: [{ env: spec }],

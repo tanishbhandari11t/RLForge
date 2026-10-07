@@ -8,4 +8,5 @@ __pycache__/
 *.pyc
 .agenteval/
 .playwright-mcp/
+.rlforge/
 examples/**/models/

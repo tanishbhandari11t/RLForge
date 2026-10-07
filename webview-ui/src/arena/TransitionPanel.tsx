@@ -39,11 +39,15 @@ export function TransitionPanel({ entry, previous, inspection, agent, scale, onD
     <aside className="side">
       <div className="card agent-card">
         <div className="agent-line">
-          <span className="agent-icon">{agent?.kind === 'sb3' ? '🧠' : '🎲'}</span>
+          <span className="agent-icon">{agent?.kind === 'sb3' ? '🧠' : agent?.kind === 'replay' ? '🎥' : '🎲'}</span>
           <div>
             <div className="agent-name">{agent?.name ?? '—'}</div>
             <div className="muted small">
-              {agent?.algorithm ? `${agent.algorithm} · Stable-Baselines3` : 'samples action_space uniformly'}
+              {agent?.algorithm
+                ? `${agent.algorithm} · Stable-Baselines3`
+                : agent?.kind === 'replay'
+                  ? `replays ${agent.totalSteps ?? 0} recorded actions`
+                  : 'samples action_space uniformly'}
             </div>
           </div>
           {agent?.kind === 'sb3' && (

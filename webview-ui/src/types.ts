@@ -31,7 +31,8 @@ export interface Anomaly {
 
 export interface ActionInfo {
   type: 'discrete' | 'continuous' | 'other';
-  mode?: 'uniform' | 'policy' | 'q';
+  mode?: 'uniform' | 'policy' | 'q' | 'scripted';
+  replayed?: boolean;
   probs?: number[];
   qValues?: Num[];
   selected?: number;
@@ -121,14 +122,169 @@ export interface SessionStatus {
   step: number;
   done: boolean;
   baseFps: number;
+  recording?: boolean;
+  replay?: boolean;
 }
 
 export interface AgentDesc {
-  kind: 'random' | 'sb3';
+  kind: 'random' | 'sb3' | 'replay';
   name: string;
   algorithm: string | null;
   path?: string;
   deterministic?: boolean;
+  totalSteps?: number;
+}
+
+/** Action sequences are JSON: numbers/bools or {nd: [...], dtype} for arrays. */
+export type JsonAction = unknown;
+
+export interface ExceptionInfo {
+  type: string;
+  message: string;
+  traceback: string;
+  location: { file: string; line: number; function: string } | null;
+}
+
+export interface Evidence {
+  seed: number;
+  episode: number;
+  step: number;
+  actions: JsonAction[];
+  signature: string;
+}
+
+export interface HealthCheck {
+  id: string;
+  title: string;
+  status: 'pass' | 'warn' | 'fail' | 'info' | 'skip';
+  detail: string;
+  evidence?: Evidence | null;
+  exception?: ExceptionInfo | null;
+  count?: number;
+  messages?: string[];
+}
+
+export interface Histogram {
+  counts: number[];
+  edges: number[];
+}
+
+export interface RewardProfile {
+  steps: number;
+  invalid: number;
+  min?: number;
+  max?: number;
+  mean?: number;
+  std?: number;
+  positive?: number;
+  negative?: number;
+  zero?: number;
+  distinct?: number | null;
+  topValues?: { value: number; count: number; share: number }[];
+  sparsity?: number;
+  histogram?: Histogram;
+  episodes?: number;
+  returnMean?: number;
+  returnStd?: number;
+  returnMin?: number;
+  returnMax?: number;
+  lengthMean?: number;
+  lengthMax?: number;
+  returnHistogram?: Histogram;
+}
+
+export interface HealthReport {
+  envId: string;
+  seed: number;
+  score: number;
+  checks: HealthCheck[];
+  inspection?: Inspection | null;
+  rewardProfile?: RewardProfile;
+  frame?: Frame;
+  stats?: { episodes: number; steps: number; stepsPerSecond: number; seconds: number; cancelled: boolean };
+}
+
+export interface FuzzGroup {
+  signature: string;
+  code: string;
+  level: 'critical' | 'warning';
+  message: string;
+  exception: ExceptionInfo | null;
+  count: number;
+  episodes: { episode: number; seed: number; step: number }[];
+  seed: number;
+  episode: number;
+  step: number;
+  actions: JsonAction[];
+  minimalActions?: JsonAction[];
+  reproducible?: boolean;
+}
+
+export interface FuzzTotals {
+  episodes: number;
+  steps: number;
+  valid: number;
+  suspicious: number;
+  failed: number;
+  crashed: number;
+  capped: number;
+}
+
+export interface FuzzReport {
+  envId: string;
+  seed: number;
+  strategy: string;
+  maxSteps: number;
+  requestedEpisodes: number;
+  totals: FuzzTotals;
+  seconds: number;
+  stepsPerSecond: number;
+  cancelled: boolean;
+  groups: FuzzGroup[];
+  rewardProfile: RewardProfile;
+}
+
+export interface JobProgress {
+  stage: string;
+  fraction: number;
+  groups?: number;
+  [key: string]: unknown;
+}
+
+export interface RecordingMeta {
+  path: string;
+  size: number;
+  envId: string;
+  kwargs?: Record<string, unknown> | null;
+  seed: number | null;
+  episode: number;
+  agent: AgentDesc;
+  return: Num;
+  length: number;
+  terminated: boolean;
+  truncated: boolean;
+  complete: boolean;
+  anomalies: number;
+  createdAt: number;
+}
+
+export interface ReplayRequest {
+  path?: string;
+  env?: string;
+  seed?: number;
+  actions?: JsonAction[];
+  label?: string;
+  stopAt?: number;
+  signature?: string;
+  kind?: string;
+}
+
+export interface ReplayInfo {
+  label: string;
+  seed: number | null;
+  steps: number;
+  stopAt: number | null;
+  source: { kind: string; path?: string; name?: string; signature?: string };
 }
 
 export interface Hello {
@@ -171,11 +327,16 @@ export interface EngineError {
   location: { file: string; line: number; function: string } | null;
 }
 
+export type TabId = 'arena' | 'inspector' | 'health' | 'fuzzer' | 'replay' | 'rewards' | 'training';
+
 export interface PanelCommand {
-  tab?: 'arena' | 'inspector';
+  tab?: TabId;
   env?: string;
   model?: string;
   autoLaunch?: boolean;
+  /** Start the tab's main action immediately (health check / fuzz run). */
+  run?: boolean;
+  replay?: ReplayRequest;
 }
 
 export interface Settings {

@@ -69,7 +69,7 @@
     "viewsWelcome": [
       {
         "view": "rlforge.launcher",
-        "contents": "Watch, inspect and debug your RL agents in this project.\n[$(play-circle) Open Agent Arena](command:rlforge.openArena)\n[$(search) Inspect Environment](command:rlforge.inspectEnvironment)\n[$(refresh) Scan Project](command:rlforge.scanProject)"
+        "contents": "Watch, test and debug the RL agents and environments in this project.\n[$(play-circle) Open Agent Arena](command:rlforge.openArena)\n[$(pulse) Test Environment](command:rlforge.testEnvironment)\n[$(bug) Fuzz Environment](command:rlforge.fuzzEnvironment)\n[$(history) Episode Replays](command:rlforge.openReplays)\n[$(search) Inspect Environment](command:rlforge.inspectEnvironment)\nRight-click any SB3 .zip model in the Explorer → Watch Agent in RLForge."
       }
     ],
     "commands": [
@@ -117,6 +117,30 @@
         "title": "Inspect",
         "category": "RLForge",
         "icon": "$(search)"
+      },
+      {
+        "command": "rlforge.testEnvironment",
+        "title": "Test Environment (Health Check)",
+        "category": "RLForge",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "rlforge.fuzzEnvironment",
+        "title": "Fuzz Environment",
+        "category": "RLForge",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "rlforge.watchModel",
+        "title": "Watch Agent in RLForge",
+        "category": "RLForge",
+        "icon": "$(play)"
+      },
+      {
+        "command": "rlforge.openReplays",
+        "title": "Episode Replays",
+        "category": "RLForge",
+        "icon": "$(history)"
       }
     ],
     "menus": {
@@ -127,9 +151,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "rlforge.scanProject",
+          "command": "rlforge.testEnvironment",
           "when": "view == rlforge.project",
           "group": "navigation@2"
+        },
+        {
+          "command": "rlforge.scanProject",
+          "when": "view == rlforge.project",
+          "group": "navigation@3"
         },
         {
           "command": "rlforge.selectPythonInterpreter",
@@ -147,9 +176,26 @@
           "group": "inline@1"
         },
         {
-          "command": "rlforge.inspectItem",
+          "command": "rlforge.testEnvironment",
           "when": "view == rlforge.project && viewItem == rlforge.env",
           "group": "inline@2"
+        },
+        {
+          "command": "rlforge.inspectItem",
+          "when": "view == rlforge.project && viewItem == rlforge.env",
+          "group": "inline@3"
+        },
+        {
+          "command": "rlforge.fuzzEnvironment",
+          "when": "view == rlforge.project && viewItem == rlforge.env",
+          "group": "rlforge@1"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "rlforge.watchModel",
+          "when": "resourceExtname == .zip",
+          "group": "navigation@90"
         }
       ],
       "commandPalette": [

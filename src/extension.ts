@@ -37,6 +37,7 @@ export function activate(context: vscode.ExtensionContext): void {
         } else {
           status.hide();
         }
+        promptHealthForNewEnvs(info);
         return info;
       })
       .catch((err) => {
@@ -80,6 +81,63 @@ export function activate(context: vscode.ExtensionContext): void {
 
   type ItemNode = { type: 'env'; spec: string } | { type: 'model'; file: string };
 
+  /** Env from a CodeLens/command argument, a tree node, or a quick pick. */
+  const resolveEnv = async (arg: unknown, title: string): Promise<string | undefined> => {
+    if (arg && typeof arg === 'object') {
+      const a = arg as Partial<PanelCommand> & Partial<{ type: string; spec: string }>;
+      if (a.env) {
+        return a.env;
+      }
+      if (a.type === 'env' && a.spec) {
+        return a.spec;
+      }
+    }
+    return pickEnvironment(title);
+  };
+
+  const normalize = (s: string) => s.toLowerCase().replace(/-v\d+$/, '').replace(/[^a-z0-9]/g, '');
+  /** Best-effort env guess from a model filename such as ppo_cartpole.zip or lunarlander_dqn.zip. */
+  const guessEnvForModel = (file: string): string | undefined => {
+    const name = normalize(file.split(/[\\/]/).pop() ?? '');
+    const candidates = [...(project?.environments.map((e) => e.spec) ?? []), ...POPULAR_ENVS];
+    return candidates
+      .map((spec) => ({ spec, key: normalize(spec.includes(':') ? spec.split(':').pop()! : spec) }))
+      .filter((c) => c.key.length >= 4 && name.includes(c.key))
+      .sort((a, b) => b.key.length - a.key.length)[0]?.spec;
+  };
+
+  const watchModel = (file: string) => {
+    const env = guessEnvForModel(file);
+    openPanel({ tab: 'arena', model: file, ...(env ? { env, autoLaunch: true } : {}) });
+  };
+
+  const KNOWN_CUSTOM_KEY = 'rlforge.knownCustomEnvs';
+  const promptHealthForNewEnvs = (info: ProjectInfo) => {
+    const custom = info.environments.filter((e) => e.kind === 'custom');
+    const known = new Set(context.workspaceState.get<string[]>(KNOWN_CUSTOM_KEY, []));
+    const fresh = custom.filter((e) => !known.has(e.spec));
+    if (!fresh.length) {
+      return;
+    }
+    void context.workspaceState.update(KNOWN_CUSTOM_KEY, [...known, ...fresh.map((e) => e.spec)]);
+    const first = fresh[0];
+    const more = fresh.length > 1 ? ` (+${fresh.length - 1} more)` : '';
+    void vscode.window
+      .showInformationMessage(
+        `RLForge found a custom environment: ${first.label}${more}. Run a health check (check_env, determinism, NaN/space violations)?`,
+        'Run Health Check',
+        'Fuzz It',
+        'Not now',
+      )
+      .then((choice) => {
+        if (choice === 'Run Health Check') {
+          openPanel({ tab: 'health', env: first.spec, run: true });
+        } else if (choice === 'Fuzz It') {
+          openPanel({ tab: 'fuzzer', env: first.spec, run: true });
+        }
+      });
+  };
+
   context.subscriptions.push(
     output,
     engine,
@@ -101,9 +159,36 @@ export function activate(context: vscode.ExtensionContext): void {
       if (node.type === 'env') {
         openPanel({ tab: 'arena', env: node.spec, autoLaunch: true });
       } else {
-        openPanel({ tab: 'arena', model: node.file });
+        watchModel(node.file);
       }
     }),
+    vscode.commands.registerCommand('rlforge.testEnvironment', async (arg?: unknown) => {
+      const env = await resolveEnv(arg, 'RLForge: Test environment health');
+      if (env) {
+        openPanel({ tab: 'health', env, run: true });
+      }
+    }),
+    vscode.commands.registerCommand('rlforge.fuzzEnvironment', async (arg?: unknown) => {
+      const env = await resolveEnv(arg, 'RLForge: Fuzz environment');
+      if (env) {
+        openPanel({ tab: 'fuzzer', env, run: true });
+      }
+    }),
+    vscode.commands.registerCommand('rlforge.watchModel', async (uri?: vscode.Uri) => {
+      let file = uri instanceof vscode.Uri ? uri.fsPath : undefined;
+      if (!file) {
+        const picked = await vscode.window.showOpenDialog({
+          title: 'Select a Stable-Baselines3 model (.zip)',
+          filters: { 'SB3 model': ['zip'] },
+          canSelectMany: false,
+        });
+        file = picked?.[0]?.fsPath;
+      }
+      if (file) {
+        watchModel(file);
+      }
+    }),
+    vscode.commands.registerCommand('rlforge.openReplays', () => openPanel({ tab: 'replay' })),
     vscode.commands.registerCommand('rlforge.inspectItem', (node: ItemNode) => {
       if (node.type === 'env') {
         openPanel({ tab: 'inspector', env: node.spec });

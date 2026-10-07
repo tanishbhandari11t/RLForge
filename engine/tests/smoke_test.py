@@ -139,6 +139,77 @@ def main() -> None:
             print("sb3 action info:", s["actionInfo"])
             assert s["actionInfo"].get("mode") == "policy" and "value" in s["actionInfo"]
 
+        # ---- recording + replay
+        eng.events.clear()
+        eng.request("load", env="CartPole-v1", seed=11, agent={"kind": "random"}, autoReset=False, record=True)
+        eng.wait_for("reset")
+        eng.request("set_speed", speed=20)
+        eng.request("play")
+        saved = eng.wait_for("episode_saved", timeout=30)[0]["data"]
+        print("recording saved:", os.path.basename(saved["path"]), "return", saved["meta"]["return"])
+        recs = eng.request("list_recordings")["recordings"]
+        assert any(r["path"] == saved["path"] for r in recs)
+
+        eng.events.clear()
+        res = eng.request("load", replay={"path": saved["path"]})
+        assert res["replay"]["steps"] > 0
+        eng.wait_for("reset")
+        eng.request("set_speed", speed=20)
+        eng.request("play")
+        end = eng.wait_for("episode_end", timeout=30)[0]["data"]
+        diverged = [a for e in eng.events if e["event"] == "step" for a in e["data"]["anomalies"]
+                    if a["code"] == "replay_divergence"]
+        assert end["return"] == saved["meta"]["return"], (end, saved["meta"])
+        assert not diverged, diverged
+        print("replay ok: identical return", end["return"], "with no divergence")
+        eng.request("unload")
+        eng.request("delete_recording", path=saved["path"])
+
+        # ---- health check
+        def run_job(cmd: str, timeout: float = 120, **args) -> dict:
+            job = eng.request(cmd, **args)
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                for e in list(eng.events):
+                    if e["event"] in ("job_done", "job_failed") and e["data"]["jobId"] == job["jobId"]:
+                        assert e["event"] == "job_done", e["data"]
+                        return e["data"]["result"]
+                time.sleep(0.05)
+            raise TimeoutError(cmd)
+
+        report = run_job("start_health", env="CartPole-v1", seed=0, stepBudget=2000)
+        statuses = {c["id"]: c["status"] for c in report["checks"]}
+        print("health CartPole:", report["score"], statuses)
+        assert statuses["crashes"] == "pass" and statuses["determinism"] == "pass" and report["score"] >= 80
+
+        buggy = run_job("start_health", env="examples/custom_env/grid_world_env.py:BuggyGridWorldEnv", seed=0, stepBudget=2000)
+        bstat = {c["id"]: c["status"] for c in buggy["checks"]}
+        print("health BuggyGridWorld:", buggy["score"], bstat)
+        assert bstat["nan_inf"] == "fail" and buggy["score"] < report["score"]
+
+        # ---- fuzzer + minimisation + replay of the failure
+        fz = run_job("start_fuzz", env="examples/custom_env/grid_world_env.py:BuggyGridWorldEnv",
+                     episodes=200, maxSteps=200, seed=0)
+        print("fuzz totals:", fz["totals"], "groups:", [(g["signature"], g["count"], len(g["actions"]),
+                                                          len(g.get("minimalActions") or [])) for g in fz["groups"]])
+        nan = next(g for g in fz["groups"] if g["code"] == "nan_observation")
+        assert nan["reproducible"] and len(nan["minimalActions"]) <= len(nan["actions"])
+
+        eng.events.clear()
+        eng.request("load", replay={"env": "examples/custom_env/grid_world_env.py:BuggyGridWorldEnv",
+                                    "seed": nan["seed"], "actions": nan["minimalActions"], "label": "NaN failure"})
+        eng.wait_for("reset")
+        eng.request("play")
+        eng.wait_for("status", 1)
+        deadline = time.time() + 15
+        hit = None
+        while time.time() < deadline and hit is None:
+            hit = next((e["data"] for e in eng.events if e["event"] == "step"
+                        and any(a["code"] == "nan_observation" for a in e["data"]["anomalies"])), None)
+            time.sleep(0.05)
+        assert hit, "replaying the minimised failure should reproduce the NaN"
+        print("failure replay ok: NaN reproduced at step", hit["step"])
+
         print("\nALL SMOKE TESTS PASSED")
     finally:
         eng.close()

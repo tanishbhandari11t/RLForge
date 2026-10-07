@@ -214,6 +214,52 @@ class SB3Agent:
         return out
 
 
+class ReplayFinished(Exception):
+    pass
+
+
+class ScriptedAgent:
+    """Replays a fixed action sequence (a recording or a fuzzer failure)."""
+
+    kind = "replay"
+
+    def __init__(self, action_space: Any, actions: list, infos: list | None, label: str, source: dict):
+        from .util import action_from_json
+
+        self.action_space = action_space
+        self.actions = [action_from_json(a, action_space) for a in actions]
+        self.infos = infos or []
+        self.label = label
+        self.source = source
+        self.cursor = 0
+        self.space_kind = _space_kind(action_space)
+
+    def describe(self) -> dict:
+        return {"kind": self.kind, "name": self.label, "algorithm": None, "source": self.source,
+                "totalSteps": len(self.actions)}
+
+    def reset(self) -> None:
+        self.cursor = 0
+
+    def act(self, obs: Any) -> tuple[Any, dict]:
+        if self.cursor >= len(self.actions):
+            raise ReplayFinished()
+        action = self.actions[self.cursor]
+        recorded = self.infos[self.cursor] if self.cursor < len(self.infos) else None
+        self.cursor += 1
+        if recorded:
+            return action, {**recorded, "replayed": True}
+        info: dict[str, Any] = {"type": self.space_kind, "mode": "scripted", "replayed": True}
+        if self.space_kind == "discrete":
+            n = int(self.action_space.n)
+            selected = int(action) - int(self.action_space.start)
+            info.update(probs=[1.0 if i == selected else 0.0 for i in range(n)], selected=selected)
+        elif self.space_kind == "continuous":
+            low, high = _bounds(self.action_space)
+            info.update(values=[num(v) for v in np.asarray(action, dtype=np.float64).reshape(-1)], low=low, high=high)
+        return action, info
+
+
 def make_agent(config: dict | None, env: Any, seed: int | None):
     config = config or {}
     kind = config.get("kind", "random")

@@ -44,7 +44,8 @@ export function ArenaView({ arena, project, settings, command, registeredEnvs, a
     void actions.launch({
       env: f.env.trim(),
       seed: Number.isFinite(seed) ? seed : null,
-      autoReset: s.status?.autoReset ?? settings.autoReset,
+      autoReset: s.replay ? settings.autoReset : s.status?.autoReset ?? settings.autoReset,
+      record: !s.replay && !!s.status?.recording,
       agent:
         f.agentKind === 'sb3'
           ? {
@@ -65,6 +66,10 @@ export function ArenaView({ arena, project, settings, command, registeredEnvs, a
   useEffect(() => {
     if (!command) return;
     const c = command.command;
+    if (c.replay) {
+      void actions.launchReplay(c.replay);
+      return;
+    }
     const patch: Partial<SetupForm> = {};
     if (c.env) patch.env = c.env;
     if (c.model) Object.assign(patch, { agentKind: 'sb3', modelPath: c.model });
@@ -141,7 +146,7 @@ export function ArenaView({ arena, project, settings, command, registeredEnvs, a
 
       {s.loadError && (
         <div className="alert alert-error">
-          <div className="alert-title">Could not launch {form.env}</div>
+          <div className="alert-title">Launch failed</div>
           <pre>{s.loadError.message}</pre>
           <InstallHint message={s.loadError.message} />
           <div className="alert-actions">
@@ -155,6 +160,29 @@ export function ArenaView({ arena, project, settings, command, registeredEnvs, a
               Dismiss
             </button>
           </div>
+        </div>
+      )}
+
+      {s.replay && (
+        <div className="alert alert-info replay-banner">
+          <div>
+            <div className="alert-title">🎥 Replaying · {s.replay.label}</div>
+            <div className="small muted">
+              seed {s.replay.seed ?? '—'} · {s.replay.steps} recorded action{s.replay.steps === 1 ? '' : 's'}
+              {s.replay.stopAt != null && <> · pauses at step {s.replay.stopAt}</>}
+              {' · '}deterministic re-simulation, so every frame, observation and reward is recomputed
+            </div>
+            {s.replayEnded && (
+              <div className={`small ${s.replayEnded.diverged ? 'bad' : ''}`}>
+                {s.replayEnded.diverged
+                  ? '⚠ Replay finished, but the trajectory diverged from the recording (the environment is not deterministic).'
+                  : `✓ Replay finished after ${s.replayEnded.step} steps. Press ▶ to watch it again or drag the timeline.`}
+              </div>
+            )}
+          </div>
+          <button className="btn" onClick={() => launch()}>
+            Exit replay
+          </button>
         </div>
       )}
 
@@ -183,6 +211,21 @@ export function ArenaView({ arena, project, settings, command, registeredEnvs, a
               </span>
               <span className="muted">seed {s.seed ?? '—'}</span>
               <span className="muted">shortcuts: Space · ← → · R</span>
+              {!s.replay && (
+                <span className="session-actions">
+                  <button
+                    className={`btn btn-small ${s.status?.recording ? 'btn-recording' : ''}`}
+                    title="Save every finished episode to .rlforge/episodes so you can replay it later"
+                    onClick={() => void actions.setRecording(!s.status?.recording)}
+                  >
+                    {s.status?.recording ? '⏺ Recording' : '⏺ Record'}
+                  </button>
+                  <button className="btn btn-small" title="Save the current episode now" onClick={() => void actions.saveEpisode()}>
+                    💾 Save episode
+                  </button>
+                  {s.lastSaved && Date.now() - s.lastSaved.at < 4000 && <span className="small saved-note">saved ✓</span>}
+                </span>
+              )}
             </div>
           )}
           <Stage
@@ -211,7 +254,15 @@ export function ArenaView({ arena, project, settings, command, registeredEnvs, a
             onAutoReset={actions.setAutoReset}
             onBackToLive={() => actions.seek(null)}
           />
-          {hasSession && <Timeline timeline={timeline} length={timeline.length} cursor={s.cursor} onSeek={actions.seek} />}
+          {hasSession && (
+            <Timeline
+              timeline={timeline}
+              length={timeline.length}
+              cursor={s.cursor}
+              onSeek={actions.seek}
+              marker={s.replay?.stopAt ?? null}
+            />
+          )}
           {hasSession && (
             <div className="arena-bottom">
               <EpisodeHistory history={s.history} rewardThreshold={s.inspection?.spec?.rewardThreshold ?? null} />

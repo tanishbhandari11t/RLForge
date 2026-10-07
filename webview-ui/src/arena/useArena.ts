@@ -5,6 +5,8 @@ import type {
   EngineError,
   EpisodeSummary,
   Inspection,
+  ReplayInfo,
+  ReplayRequest,
   SessionStatus,
   TimelineEntry,
 } from '../types';
@@ -55,6 +57,9 @@ export interface ArenaStore {
   warnings: string[];
   loading: boolean;
   loadError: { message: string; traceback?: string } | null;
+  replay: ReplayInfo | null;
+  replayEnded: { step: number; diverged: boolean } | null;
+  lastSaved: { path: string; at: number } | null;
 }
 
 function emptyStore(): ArenaStore {
@@ -75,6 +80,9 @@ function emptyStore(): ArenaStore {
     warnings: [],
     loading: false,
     loadError: null,
+    replay: null,
+    replayEnded: null,
+    lastSaved: null,
   };
 }
 
@@ -105,6 +113,7 @@ export function useArena() {
     s.episodeAnomalies = 0;
     s.error = null;
     s.warnings = [];
+    s.replayEnded = null;
   }, []);
 
   const recordAnomalies = useCallback((list: Anomaly[] | undefined, step: number) => {
@@ -199,6 +208,12 @@ export function useArena() {
         case 'warning':
           s.warnings = [...s.warnings.slice(-4), d.message];
           break;
+        case 'episode_saved':
+          s.lastSaved = { path: d.path, at: Date.now() };
+          break;
+        case 'replay_end':
+          s.replayEnded = { step: d.step, diverged: d.diverged };
+          break;
         default:
           return;
       }
@@ -239,39 +254,52 @@ export function useArena() {
     if (s.status) s.status = { ...s.status, playing };
   };
 
-  const actions = {
-    launch: async (opts: LaunchOptions) => {
-      const s = store.current;
-      s.loading = true;
-      s.loadError = null;
-      s.error = null;
+  const load = async (args: Record<string, unknown>, label: string) => {
+    const s = store.current;
+    s.loading = true;
+    s.loadError = null;
+    s.error = null;
+    rerender();
+    try {
+      const res = await request<{
+        sessionId: number;
+        envId: string;
+        inspection: Inspection;
+        agent: AgentDesc;
+        status: SessionStatus;
+        replay: ReplayInfo | null;
+      }>('load', { ...args, speed: s.status?.speed ?? 1 });
+      if (res.sessionId > s.sessionId) startSession(res.sessionId);
+      s.envId = res.envId;
+      s.inspection = res.inspection;
+      s.agent = res.agent;
+      s.replay = res.replay;
+      s.status = s.status ?? res.status;
+      return true;
+    } catch (err) {
+      s.loadError = { message: `${label}: ${(err as Error).message}`, traceback: (err as RequestError).traceback };
+      return false;
+    } finally {
+      s.loading = false;
       rerender();
-      try {
-        const res = await request<{
-          sessionId: number;
-          inspection: Inspection;
-          agent: AgentDesc;
-          status: SessionStatus;
-        }>('load', {
-          env: opts.env,
-          seed: opts.seed,
-          agent: opts.agent,
-          autoReset: opts.autoReset,
-          speed: s.status?.speed ?? 1,
-        });
-        if (res.sessionId > s.sessionId) startSession(res.sessionId);
-        s.envId = opts.env;
-        s.inspection = res.inspection;
-        s.agent = res.agent;
-        s.status = s.status ?? res.status;
-        return true;
-      } catch (err) {
-        s.loadError = { message: (err as Error).message, traceback: (err as RequestError).traceback };
-        return false;
-      } finally {
-        s.loading = false;
-        rerender();
-      }
+    }
+  };
+
+  const actions = {
+    launch: (opts: LaunchOptions & { record?: boolean }) =>
+      load(
+        { env: opts.env, seed: opts.seed, agent: opts.agent, autoReset: opts.autoReset, record: opts.record },
+        `Could not launch ${opts.env}`,
+      ),
+    launchReplay: (replay: ReplayRequest) => load({ replay }, 'Could not start the replay'),
+    setRecording: async (value: boolean) => {
+      const s = store.current;
+      if (s.status) s.status = { ...s.status, recording: value };
+      rerender();
+      await call('set_recording', { value });
+    },
+    saveEpisode: async () => {
+      await call('save_episode');
     },
     play: async () => {
       const s = store.current;

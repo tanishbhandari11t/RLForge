@@ -5,10 +5,11 @@ import { EngineClient, EngineRequestError } from '../engine/engineClient';
 import { ProjectInfo } from '../project/scanner';
 
 export interface PanelCommand {
-  tab?: 'arena' | 'inspector';
+  tab?: 'arena' | 'inspector' | 'health' | 'fuzzer' | 'replay' | 'rewards';
   env?: string;
   model?: string;
   autoLaunch?: boolean;
+  run?: boolean;
 }
 
 export interface PanelDeps {
