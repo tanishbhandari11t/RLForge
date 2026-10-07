@@ -1,0 +1,208 @@
+{
+  "name": "rlforge",
+  "displayName": "RLForge — RL Developer Toolkit",
+  "description": "Watch, inspect and debug reinforcement-learning agents and Gymnasium environments directly inside VS Code.",
+  "version": "0.1.0",
+  "publisher": "rlforge",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tanishbhandari11t/RLForge.git"
+  },
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0A0E1A",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Debuggers",
+    "Visualization",
+    "Data Science"
+  ],
+  "keywords": [
+    "reinforcement learning",
+    "gymnasium",
+    "stable-baselines3",
+    "rl",
+    "agent",
+    "debugger",
+    "ppo",
+    "dqn"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:python",
+    "workspaceContains:**/*.py",
+    "workspaceContains:**/requirements.txt",
+    "workspaceContains:**/pyproject.toml"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "rlforge",
+          "title": "RLForge",
+          "icon": "media/rlforge-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "rlforge.launcher",
+          "name": "RLForge",
+          "icon": "media/rlforge-activity.svg"
+        }
+      ],
+      "rlforge": [
+        {
+          "id": "rlforge.project",
+          "name": "RL Project",
+          "icon": "media/rlforge-activity.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "rlforge.launcher",
+        "contents": "Watch, inspect and debug your RL agents in this project.\n[$(play-circle) Open Agent Arena](command:rlforge.openArena)\n[$(search) Inspect Environment](command:rlforge.inspectEnvironment)\n[$(refresh) Scan Project](command:rlforge.scanProject)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "rlforge.openArena",
+        "title": "Open Agent Arena",
+        "category": "RLForge",
+        "icon": "$(play-circle)"
+      },
+      {
+        "command": "rlforge.inspectEnvironment",
+        "title": "Inspect Environment",
+        "category": "RLForge",
+        "icon": "$(search)"
+      },
+      {
+        "command": "rlforge.scanProject",
+        "title": "Scan Project",
+        "category": "RLForge",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "rlforge.selectPythonInterpreter",
+        "title": "Select Python Interpreter",
+        "category": "RLForge"
+      },
+      {
+        "command": "rlforge.restartEngine",
+        "title": "Restart Engine",
+        "category": "RLForge"
+      },
+      {
+        "command": "rlforge.showEngineLog",
+        "title": "Show Engine Log",
+        "category": "RLForge"
+      },
+      {
+        "command": "rlforge.watchItem",
+        "title": "Watch in Agent Arena",
+        "category": "RLForge",
+        "icon": "$(play)"
+      },
+      {
+        "command": "rlforge.inspectItem",
+        "title": "Inspect",
+        "category": "RLForge",
+        "icon": "$(search)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "rlforge.openArena",
+          "when": "view == rlforge.project",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rlforge.scanProject",
+          "when": "view == rlforge.project",
+          "group": "navigation@2"
+        },
+        {
+          "command": "rlforge.selectPythonInterpreter",
+          "when": "view == rlforge.project"
+        },
+        {
+          "command": "rlforge.showEngineLog",
+          "when": "view == rlforge.project"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "rlforge.watchItem",
+          "when": "view == rlforge.project && viewItem =~ /^rlforge\\.(env|model)$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "rlforge.inspectItem",
+          "when": "view == rlforge.project && viewItem == rlforge.env",
+          "group": "inline@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "rlforge.watchItem",
+          "when": "false"
+        },
+        {
+          "command": "rlforge.inspectItem",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "RLForge",
+      "properties": {
+        "rlforge.pythonPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Python interpreter used to run the RLForge engine. Leave empty to use the interpreter selected in the Python extension, falling back to `python` / `py -3` on PATH."
+        },
+        "rlforge.defaultSeed": {
+          "type": "number",
+          "default": 42,
+          "description": "Seed used for the first episode when launching an environment. Episode N uses seed + N - 1."
+        },
+        "rlforge.autoReset": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start a new episode when the current one terminates or is truncated during playback."
+        },
+        "rlforge.codeLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show *Watch in Arena* / *Inspect* CodeLens above `gym.make(...)` calls and custom `gym.Env` classes."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "start": "node scripts/install.mjs",
+    "vscode:prepublish": "npm run build",
+    "build": "npm run build:webview && npm run compile",
+    "build:webview": "npm --prefix webview-ui run build",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test:engine": "python engine/tests/smoke_test.py",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^4.0.0",
+    "typescript": "^5.5.0"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+out/
+webview-ui/dist/
+*.tsbuildinfo
+docs/screenshots/
+*.vsix
+__pycache__/
+*.pyc
+.agenteval/
+.playwright-mcp/
+examples/**/models/
